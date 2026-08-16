@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./responsive.css";
 
 export const metadata: Metadata = {
   title: "ChatGPT Go — AI Chat",
