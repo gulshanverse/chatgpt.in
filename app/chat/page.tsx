@@ -7,6 +7,7 @@ import { ChatSearch } from "../../components/chat/chat-search";
 import { MessageContent } from "../../components/chat/message-content";
 import { useChatStream } from "../../components/chat/use-chat-stream";
 import { StreamedMessage } from "../../components/chat/streamed-message";
+import { ModelSelector } from "../../components/chat/model-selector";
 
 export default function ChatPage() {
   const { conversations, createConversation, addMessage, deleteConversation, renameConversation } = useChat();
@@ -17,6 +18,7 @@ export default function ChatPage() {
   const [assistantText, setAssistantText] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [model, setModel] = useState("gpt-5.6");
 
   const active = useMemo(() => conversations.find((item) => item.id === activeId), [conversations, activeId]);
 
@@ -35,7 +37,7 @@ export default function ChatPage() {
     setAssistantText("");
     let full = "";
     try {
-      await send({ conversationId: conversation.id, content: text, history, onToken: (token) => { full += token; setAssistantText(full); } });
+      await send({ conversationId: conversation.id, content: text, history, model, onToken: (token) => { full += token; setAssistantText(full); } });
       if (full) addMessage(conversation.id, { role: "assistant", content: full });
       setAssistantText("");
     } catch { /* stream hook exposes the error */ }
@@ -78,7 +80,7 @@ export default function ChatPage() {
       </aside>}
       {!sidebar && <button className="functional-open-sidebar" onClick={() => setSidebar(true)}><Menu size={20} /></button>}
       <section className="functional-main">
-        <header className="functional-header"><span>{active?.title ?? "ChatGPT Go"}</span><button><span>Share</span></button></header>
+        <header className="functional-header"><span>{active?.title ?? "ChatGPT Go"}</span><ModelSelector value={model} onChange={setModel} /></header>
         <div className="functional-messages">
           {!active && !assistantText && <div className="functional-empty"><div className="functional-logo">✦</div><h1>How can I help you today?</h1><p>Ask anything and get a streamed response.</p></div>}
           {active?.messages.map((message) => message.role === "user" ? <div className="functional-user" key={message.id}><MessageContent content={message.content} /></div> : <div className="functional-saved-assistant" key={message.id}><div className="functional-assistant-mark">✦</div><MessageContent content={message.content} /></div>)}
