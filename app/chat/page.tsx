@@ -46,7 +46,8 @@ export default function ChatPage() {
       const response = await fetch("/api/transcribe", { method: "POST", body: form });
       const data = await response.json() as { text?: string; error?: string };
       if (!response.ok) throw new Error(data.error || "Transcription failed");
-      if (data.text?.trim()) setDraft((current) => `${current}${current.trim() ? " " : ""}${data.text.trim()}`);
+      const text = data.text?.trim();
+      if (text) setDraft((current) => `${current}${current.trim() ? " " : ""}${text}`);
     } catch (error) {
       setVoiceError(error instanceof Error ? error.message : "Voice transcription failed");
     } finally {
