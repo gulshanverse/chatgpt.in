@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { ArrowUp, Menu, MoreHorizontal, Plus, Search, Sparkles, UserCircle, Square, Trash2, Pencil } from "lucide-react";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { ArrowUp, FileText, Menu, MoreHorizontal, Plus, Search, Sparkles, UserCircle, Square, Trash2, Pencil, X } from "lucide-react";
 import { useChat } from "../../components/chat/chat-provider";
 import { ChatSearch } from "../../components/chat/chat-search";
 import { MessageContent } from "../../components/chat/message-content";
 import { useChatStream } from "../../components/chat/use-chat-stream";
 import { StreamedMessage } from "../../components/chat/streamed-message";
 import { ModelSelector } from "../../components/chat/model-selector";
+import type { ChatAttachment } from "../../lib/chat/types";
 
 export default function ChatPage() {
   const { conversations, createConversation, addMessage, deleteConversation, renameConversation } = useChat();
@@ -19,21 +20,30 @@ export default function ChatPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [model, setModel] = useState("gpt-5.6");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const active = useMemo(() => conversations.find((item) => item.id === activeId), [conversations, activeId]);
+
+  function addFiles(files: FileList | null) {
+    if (!files) return;
+    const next = Array.from(files).map((file) => ({ id: crypto.randomUUID(), name: file.name, type: file.type || "application/octet-stream", size: file.size }));
+    setAttachments((current) => [...current, ...next]);
+  }
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (isStreaming) { stop(); return; }
-    const text = draft.trim();
+    const text = draft.trim() || (attachments.length ? `Please analyze these attachments: ${attachments.map((file) => file.name).join(", ")}` : "");
     if (!text) return;
     const conversation = active ?? createConversation(text.slice(0, 48));
     const history = [...conversation.messages, { id: crypto.randomUUID(), role: "user" as const, content: text, createdAt: new Date().toISOString() }]
       .filter((message) => message.role !== "system" || message.content.trim())
       .map(({ role, content }) => ({ role, content }));
     setActiveId(conversation.id);
-    addMessage(conversation.id, { role: "user", content: text });
+    addMessage(conversation.id, { role: "user", content: text, attachments });
     setDraft("");
+    setAttachments([]);
     setAssistantText("");
     let full = "";
     try {
@@ -83,14 +93,18 @@ export default function ChatPage() {
         <header className="functional-header"><span>{active?.title ?? "ChatGPT Go"}</span><ModelSelector value={model} onChange={setModel} /></header>
         <div className="functional-messages">
           {!active && !assistantText && <div className="functional-empty"><div className="functional-logo">✦</div><h1>How can I help you today?</h1><p>Ask anything and get a streamed response.</p></div>}
-          {active?.messages.map((message) => message.role === "user" ? <div className="functional-user" key={message.id}><MessageContent content={message.content} /></div> : <div className="functional-saved-assistant" key={message.id}><div className="functional-assistant-mark">✦</div><MessageContent content={message.content} /></div>)}
+          {active?.messages.map((message) => <div key={message.id} className={message.role === "user" ? "functional-user" : "functional-saved-assistant"}>{message.role === "assistant" && <div className="functional-assistant-mark">✦</div>}<MessageContent content={message.content} />{message.attachments?.length ? <div className="functional-attachment-list">{message.attachments.map((file) => <span key={file.id}><FileText size={13} />{file.name}</span>)}</div> : null}</div>)}
           {assistantText && <StreamedMessage content={assistantText} streaming={isStreaming} />}
           {error && <div className="functional-error">{error}</div>}
         </div>
         <form className="functional-composer" onSubmit={submit}>
-          <button type="button" aria-label="Add"><Plus size={20} /></button>
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything" autoFocus disabled={isStreaming} />
-          <button className={draft.trim() && !isStreaming ? "functional-send ready" : "functional-send"} aria-label={isStreaming ? "Stop generating" : "Send"} type="submit">{isStreaming ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}</button>
+          <input ref={fileInput} type="file" multiple hidden onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+          {attachments.length > 0 && <div className="functional-attachments">{attachments.map((file) => <div className="functional-attachment-chip" key={file.id}><FileText size={14} /><span>{file.name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))}><X size={13} /></button></div>)}</div>}
+          <div className="functional-composer-row">
+            <button type="button" aria-label="Add files" onClick={() => fileInput.current?.click()}><Plus size={20} /></button>
+            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything" autoFocus disabled={isStreaming} />
+            <button className={draft.trim() || attachments.length ? "functional-send ready" : "functional-send"} aria-label={isStreaming ? "Stop generating" : "Send"} type="submit">{isStreaming ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}</button>
+          </div>
         </form>
       </section>
     </main>
