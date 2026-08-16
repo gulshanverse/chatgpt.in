@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const encoder = new TextEncoder();
-
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
+type AttachmentInput = { fileId?: string; name?: string };
 
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -26,8 +26,7 @@ function streamResponse(conversationId: string, responseText: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { conversationId?: string; content?: string; history?: HistoryMessage[]; model?: string };
-
+  let body: { conversationId?: string; content?: string; history?: HistoryMessage[]; model?: string; attachments?: AttachmentInput[] };
   try {
     body = await request.json();
   } catch {
@@ -39,11 +38,13 @@ export async function POST(request: Request) {
 
   const conversationId = body.conversationId ?? crypto.randomUUID();
   const history = (body.history ?? []).filter((message) => message.content.trim()).slice(-30);
+  const attachments = (body.attachments ?? []).filter((attachment) => attachment.fileId);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
+    const suffix = attachments.length ? ` I also received ${attachments.length} uploaded file${attachments.length === 1 ? "" : "s"}.` : "";
     return new Response(
-      streamResponse(conversationId, `I received your message: “${content}”. Add OPENAI_API_KEY to enable live model responses.`),
+      streamResponse(conversationId, `I received your message: “${content}”.${suffix} Add OPENAI_API_KEY to enable live model responses.`),
       { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } },
     );
   }
@@ -56,7 +57,13 @@ export async function POST(request: Request) {
         role: message.role === "system" ? "developer" : message.role,
         content: message.content,
       })),
-      { role: "user", content },
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: content },
+          ...attachments.map((attachment) => ({ type: "input_file" as const, file_id: attachment.fileId! })),
+        ],
+      },
     ];
     const stream = await client.responses.create({ model, input, stream: true });
 
