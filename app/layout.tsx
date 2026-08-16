@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./responsive.css";
 import "./fidelity.css";
+import { ChatProvider } from "../components/chat/chat-provider";
 
 export const metadata: Metadata = {
   title: "ChatGPT Go — AI Chat",
@@ -19,7 +20,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="dark">
-      <body>{children}</body>
+      <body>
+        <ChatProvider>{children}</ChatProvider>
+      </body>
     </html>
   );
 }
