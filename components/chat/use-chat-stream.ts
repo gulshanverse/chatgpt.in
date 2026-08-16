@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { consumeUploadedChatFiles } from "../../lib/chat/upload-store";
+import { consumeUploadedChatFiles, getUploadedChatFiles } from "../../lib/chat/upload-store";
 
 type StreamState = "idle" | "streaming" | "error";
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -27,17 +27,8 @@ function parseEvent(event: string): { name?: string; data?: StreamEventData } | 
     const parsed = JSON.parse(dataLine.slice(6)) as unknown;
     if (!parsed || typeof parsed !== "object") return null;
     const value = parsed as Record<string, unknown>;
-    return {
-      name,
-      data: {
-        conversationId: typeof value.conversationId === "string" ? value.conversationId : undefined,
-        token: typeof value.token === "string" ? value.token : undefined,
-        error: typeof value.error === "string" ? value.error : undefined,
-      },
-    };
-  } catch {
-    return null;
-  }
+    return { name, data: { conversationId: typeof value.conversationId === "string" ? value.conversationId : undefined, token: typeof value.token === "string" ? value.token : undefined, error: typeof value.error === "string" ? value.error : undefined } };
+  } catch { return null; }
 }
 
 export function useChatStream() {
@@ -45,11 +36,7 @@ export function useChatStream() {
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
-  const stop = useCallback(() => {
-    controllerRef.current?.abort();
-    controllerRef.current = null;
-    setState("idle");
-  }, []);
+  const stop = useCallback(() => { controllerRef.current?.abort(); controllerRef.current = null; setState("idle"); }, []);
 
   const send = useCallback(async ({ conversationId, content, history, model, attachments, onConversation, onToken }: StreamOptions) => {
     controllerRef.current?.abort();
@@ -61,21 +48,14 @@ export function useChatStream() {
     try {
       const selected = attachments ?? [];
       const selectedIds = selected.map((attachment) => attachment.id);
-      const queuedAttachments = await consumeUploadedChatFiles(selectedIds);
+      const queuedAttachments = await getUploadedChatFiles(selectedIds);
       const uploadedByClientId = new Map(queuedAttachments.map((attachment) => [attachment.clientId, attachment]));
-      if (selectedIds.length !== uploadedByClientId.size) {
-        throw new Error("One or more attachments failed to upload. Please retry the upload.");
-      }
+      if (selectedIds.length !== uploadedByClientId.size) throw new Error("One or more attachments failed to upload. Please retry the upload.");
       const allAttachments = selected.flatMap((attachment) => {
         const uploaded = uploadedByClientId.get(attachment.id);
         return uploaded ? [{ id: uploaded.id, name: uploaded.name, type: uploaded.type, size: uploaded.size }] : [];
       });
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, content, history, model, attachments: allAttachments }),
-        signal: controller.signal,
-      });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, content, history, model, attachments: allAttachments }), signal: controller.signal });
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to start the chat stream");
@@ -113,7 +93,10 @@ export function useChatStream() {
           break;
         }
       }
-      if (!controller.signal.aborted) setState("idle");
+      if (!controller.signal.aborted) {
+        await consumeUploadedChatFiles(selectedIds);
+        setState("idle");
+      }
     } catch (streamError) {
       if (controller.signal.aborted) return;
       const message = streamError instanceof Error ? streamError.message : "Chat stream failed";
