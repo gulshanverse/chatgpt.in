@@ -25,17 +25,12 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 
 function createConversation(title = "New chat"): Conversation {
   const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    title,
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-  };
+  return { id: crypto.randomUUID(), title, createdAt: now, updatedAt: now, messages: [] };
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
@@ -43,32 +38,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (stored) setConversations(JSON.parse(stored) as Conversation[]);
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
+    } finally {
+      setHydrated(true);
     }
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-  }, [conversations]);
+  }, [conversations, hydrated]);
 
-  const addMessage = useCallback(
-    (conversationId: string, message: Omit<ChatMessage, "id" | "createdAt">) => {
-      setConversations((current) =>
-        current.map((conversation) =>
-          conversation.id === conversationId
-            ? {
-                ...conversation,
-                updatedAt: new Date().toISOString(),
-                messages: [
-                  ...conversation.messages,
-                  { ...message, id: crypto.randomUUID(), createdAt: new Date().toISOString() },
-                ],
-              }
-            : conversation,
-        ),
-      );
-    },
-    [],
-  );
+  const addMessage = useCallback((conversationId: string, message: Omit<ChatMessage, "id" | "createdAt">) => {
+    setConversations((current) => current.map((conversation) =>
+      conversation.id === conversationId
+        ? { ...conversation, updatedAt: new Date().toISOString(), messages: [...conversation.messages, { ...message, id: crypto.randomUUID(), createdAt: new Date().toISOString() }] }
+        : conversation,
+    ));
+  }, []);
 
   const createConversationMemo = useCallback((title?: string) => {
     const conversation = createConversation(title);
@@ -81,13 +67,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const renameConversation = useCallback((conversationId: string, title: string) => {
-    setConversations((current) =>
-      current.map((conversation) =>
-        conversation.id === conversationId
-          ? { ...conversation, title: title.trim() || conversation.title, updatedAt: new Date().toISOString() }
-          : conversation,
-      ),
-    );
+    setConversations((current) => current.map((conversation) =>
+      conversation.id === conversationId
+        ? { ...conversation, title: title.trim() || conversation.title, updatedAt: new Date().toISOString() }
+        : conversation,
+    ));
   }, []);
 
   const value = useMemo(
