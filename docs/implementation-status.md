@@ -14,13 +14,13 @@
 - Attachment metadata and composer previews
 - Markdown/code message rendering
 - Responsive/mobile UI layers
+- Primary `/` route now enters the functional conversation engine
+- Browser microphone recording with server-side transcription
 - CI build verification on merged functional layers
 
 ## Remaining
 
-- Wire the functional conversation engine into the primary `/` reference shell
 - Real attachment upload/storage and file-aware model inputs
-- Voice recording/transcription integration
 - Regenerate/stop/share actions on the primary message surface
 - Server-side persistence/authentication
 - Rendered-browser screenshot comparison and final pixel tuning
