@@ -26,13 +26,16 @@ export default function ChatPage() {
     const text = draft.trim();
     if (!text) return;
     const conversation = active ?? createConversation(text.slice(0, 48));
+    const history = [...conversation.messages, { id: crypto.randomUUID(), role: "user" as const, content: text, createdAt: new Date().toISOString() }]
+      .filter((message) => message.role !== "system" || message.content.trim())
+      .map(({ role, content }) => ({ role, content }));
     setActiveId(conversation.id);
     addMessage(conversation.id, { role: "user", content: text });
     setDraft("");
     setAssistantText("");
     let full = "";
     try {
-      await send({ conversationId: conversation.id, content: text, onToken: (token) => { full += token; setAssistantText(full); } });
+      await send({ conversationId: conversation.id, content: text, history, onToken: (token) => { full += token; setAssistantText(full); } });
       if (full) addMessage(conversation.id, { role: "assistant", content: full });
       setAssistantText("");
     } catch { /* stream hook exposes the error */ }
