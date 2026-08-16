@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
   const conversationId = body.conversationId ?? crypto.randomUUID();
   const history = (body.history ?? [])
-    .filter((message) => message && typeof message.content === "string" && message.trim !== undefined && message.content.trim())
+    .filter((message) => message && typeof message.content === "string" && Boolean(message.content.trim()))
     .slice(-MAX_HISTORY_ITEMS)
     .map((message) => ({ ...message, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
   const attachments = (body.attachments ?? []).filter((attachment) => attachment?.fileId).slice(0, MAX_ATTACHMENTS);
