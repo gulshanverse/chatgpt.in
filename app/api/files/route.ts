@@ -7,7 +7,7 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "OPENAI_API_KEY is not configured" }, { status: 503 });
+  if (!apiKey) return NextResponse.json({ error: "File uploads are temporarily unavailable" }, { status: 503 });
 
   try {
     const form = await request.formData();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const uploaded = await client.files.create({ file, purpose: "user_data" });
 
     return NextResponse.json({ id: uploaded.id, name: file.name, type: file.type || "application/octet-stream", size: file.size });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to upload file" }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: "Unable to upload file. Please try again." }, { status: 502 });
   }
 }
