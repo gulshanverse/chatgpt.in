@@ -10,6 +10,7 @@ const MAX_CONTENT_LENGTH = 32_000;
 const MAX_HISTORY_ITEMS = 30;
 const MAX_HISTORY_MESSAGE_LENGTH = 32_000;
 const MAX_ATTACHMENTS = 10;
+const ALLOWED_MODELS = new Set(["gpt-5.6", "gpt-5.4", "gpt-5.4-mini"]);
 
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
 
   const conversationId = body.conversationId ?? crypto.randomUUID();
   const history = (body.history ?? [])
-    .filter((message) => message && typeof message.content === "string" && message.content.trim())
+    .filter((message) => message && typeof message.content === "string" && message.trim !== undefined && message.content.trim())
     .slice(-MAX_HISTORY_ITEMS)
     .map((message) => ({ ...message, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
   const attachments = (body.attachments ?? []).filter((attachment) => attachment?.fileId).slice(0, MAX_ATTACHMENTS);
@@ -57,9 +58,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const requestedModel = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
+  const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : "gpt-5.6";
+
   try {
     const client = new OpenAI({ apiKey });
-    const model = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
     const input: OpenAI.Responses.ResponseInput = [
       ...history.map((message): OpenAI.Responses.ResponseInputItem => ({
         role: message.role === "system" ? "developer" : message.role,
@@ -84,15 +87,15 @@ export async function POST(request: Request) {
             if (event.type === "response.completed") controller.enqueue(sse("done", { conversationId }));
           }
           controller.close();
-        } catch (error) {
-          controller.enqueue(sse("error", { error: error instanceof Error ? error.message : "Model stream failed" }));
+        } catch {
+          controller.enqueue(sse("error", { error: "The model response was interrupted. Please try again." }));
           controller.close();
         }
       },
     });
 
     return new Response(responseStream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start model response" }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: "Unable to start the model response right now" }, { status: 502 });
   }
 }
