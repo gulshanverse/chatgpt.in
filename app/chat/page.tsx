@@ -8,6 +8,7 @@ import { MessageContent } from "../../components/chat/message-content";
 import { useChatStream } from "../../components/chat/use-chat-stream";
 import { StreamedMessage } from "../../components/chat/streamed-message";
 import { ModelSelector } from "../../components/chat/model-selector";
+import { queueChatFileUploads } from "../../lib/chat/upload-store";
 import type { ChatAttachment, ChatMessage } from "../../lib/chat/types";
 
 const MODEL_KEY = "chatgpt.in.model.v1";
@@ -35,9 +36,14 @@ export default function ChatPage() {
 
   useEffect(() => { try { const saved = window.localStorage.getItem(MODEL_KEY); if (saved) setModel(saved); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem(MODEL_KEY, model); } catch {} }, [model]);
-  useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); } }; window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener); }, []);
+  useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); } if (event.key === "Escape") { setSearchOpen(false); setSettingsOpen(false); setMenuId(null); } }; window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener); }, []);
 
-  function addFiles(files: FileList | null) { if (!files) return; setAttachments((current) => [...current, ...Array.from(files).map((file) => ({ id: crypto.randomUUID(), name: file.name, type: file.type || "application/octet-stream", size: file.size }))]); }
+  function addFiles(files: FileList | null) {
+    if (!files) return;
+    const selected = Array.from(files);
+    setAttachments((current) => [...current, ...selected.map((file) => ({ id: crypto.randomUUID(), name: file.name, type: file.type || "application/octet-stream", size: file.size }))]);
+    void queueChatFileUploads(selected).catch((uploadError) => setVoiceError(uploadError instanceof Error ? uploadError.message : "Unable to upload attachment"));
+  }
   async function transcribe(blob: Blob) { setTranscribing(true); setVoiceError(null); try { const form = new FormData(); form.append("audio", new File([blob], "voice.webm", { type: blob.type || "audio/webm" })); const response = await fetch("/api/transcribe", { method: "POST", body: form }); const data = await response.json() as { text?: string; error?: string }; if (!response.ok) throw new Error(data.error || "Transcription failed"); const text = data.text?.trim(); if (text) setDraft((current) => `${current}${current.trim() ? " " : ""}${text}`); } catch (error) { setVoiceError(error instanceof Error ? error.message : "Voice transcription failed"); } finally { setTranscribing(false); } }
   async function toggleRecording() { if (recording) { recorder.current?.stop(); mediaStream.current?.getTracks().forEach((track) => track.stop()); setRecording(false); return; } if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { setVoiceError("Voice recording is not supported by this browser."); return; } try { setVoiceError(null); const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); mediaStream.current = stream; audioChunks.current = []; const nextRecorder = new MediaRecorder(stream); recorder.current = nextRecorder; nextRecorder.ondataavailable = (event) => { if (event.data.size) audioChunks.current.push(event.data); }; nextRecorder.onstop = () => { const blob = new Blob(audioChunks.current, { type: nextRecorder.mimeType || "audio/webm" }); void transcribe(blob); audioChunks.current = []; mediaStream.current?.getTracks().forEach((track) => track.stop()); mediaStream.current = null; recorder.current = null; }; nextRecorder.start(); setRecording(true); } catch (error) { setVoiceError(error instanceof Error ? error.message : "Microphone access was denied"); } }
   async function runGeneration(conversationId: string, history: ChatMessage[], content: string) { setAssistantText(""); let full = ""; const inputHistory = history.map(({ role, content: messageContent }) => ({ role, content: messageContent })); try { await send({ conversationId, content, history: inputHistory, model, onToken: (token) => { full += token; setAssistantText(full); } }); if (full) addMessage(conversationId, { role: "assistant", content: full }); setAssistantText(""); } catch {} }
