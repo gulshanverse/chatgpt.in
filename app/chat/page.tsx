@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useRef, useState } from "react";
-import { ArrowUp, FileText, Menu, MoreHorizontal, Plus, Search, Sparkles, UserCircle, Square, Trash2, Pencil, X } from "lucide-react";
+import { ArrowUp, FileText, Menu, MoreHorizontal, Plus, Search, Sparkles, UserCircle, Square, Trash2, Pencil, X, Mic } from "lucide-react";
 import { useChat } from "../../components/chat/chat-provider";
 import { ChatSearch } from "../../components/chat/chat-search";
 import { MessageContent } from "../../components/chat/message-content";
@@ -21,7 +21,13 @@ export default function ChatPage() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [model, setModel] = useState("gpt-5.6");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const mediaStream = useRef<MediaStream | null>(null);
+  const audioChunks = useRef<Blob[]>([]);
 
   const active = useMemo(() => conversations.find((item) => item.id === activeId), [conversations, activeId]);
 
@@ -29,6 +35,57 @@ export default function ChatPage() {
     if (!files) return;
     const next = Array.from(files).map((file) => ({ id: crypto.randomUUID(), name: file.name, type: file.type || "application/octet-stream", size: file.size }));
     setAttachments((current) => [...current, ...next]);
+  }
+
+  async function transcribe(blob: Blob) {
+    setTranscribing(true);
+    setVoiceError(null);
+    try {
+      const form = new FormData();
+      form.append("audio", new File([blob], "voice.webm", { type: blob.type || "audio/webm" }));
+      const response = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = await response.json() as { text?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || "Transcription failed");
+      if (data.text?.trim()) setDraft((current) => `${current}${current.trim() ? " " : ""}${data.text.trim()}`);
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : "Voice transcription failed");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      recorder.current?.stop();
+      mediaStream.current?.getTracks().forEach((track) => track.stop());
+      setRecording(false);
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceError("Voice recording is not supported by this browser.");
+      return;
+    }
+    try {
+      setVoiceError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStream.current = stream;
+      audioChunks.current = [];
+      const nextRecorder = new MediaRecorder(stream);
+      recorder.current = nextRecorder;
+      nextRecorder.ondataavailable = (event) => { if (event.data.size) audioChunks.current.push(event.data); };
+      nextRecorder.onstop = () => {
+        const blob = new Blob(audioChunks.current, { type: nextRecorder.mimeType || "audio/webm" });
+        void transcribe(blob);
+        audioChunks.current = [];
+        mediaStream.current?.getTracks().forEach((track) => track.stop());
+        mediaStream.current = null;
+        recorder.current = null;
+      };
+      nextRecorder.start();
+      setRecording(true);
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : "Microphone access was denied");
+    }
   }
 
   async function submit(event?: FormEvent) {
@@ -96,13 +153,15 @@ export default function ChatPage() {
           {active?.messages.map((message) => <div key={message.id} className={message.role === "user" ? "functional-user" : "functional-saved-assistant"}>{message.role === "assistant" && <div className="functional-assistant-mark">✦</div>}<MessageContent content={message.content} />{message.attachments?.length ? <div className="functional-attachment-list">{message.attachments.map((file) => <span key={file.id}><FileText size={13} />{file.name}</span>)}</div> : null}</div>)}
           {assistantText && <StreamedMessage content={assistantText} streaming={isStreaming} />}
           {error && <div className="functional-error">{error}</div>}
+          {voiceError && <div className="functional-error">{voiceError}</div>}
         </div>
         <form className="functional-composer" onSubmit={submit}>
           <input ref={fileInput} type="file" multiple hidden onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
           {attachments.length > 0 && <div className="functional-attachments">{attachments.map((file) => <div className="functional-attachment-chip" key={file.id}><FileText size={14} /><span>{file.name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))}><X size={13} /></button></div>)}</div>}
           <div className="functional-composer-row">
             <button type="button" aria-label="Add files" onClick={() => fileInput.current?.click()}><Plus size={20} /></button>
-            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything" autoFocus disabled={isStreaming} />
+            <input value={transcribing ? "Transcribing voice…" : draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything" autoFocus disabled={isStreaming || transcribing} />
+            <button type="button" aria-label={recording ? "Stop recording" : "Record voice"} onClick={() => void toggleRecording()} disabled={isStreaming || transcribing} className={recording ? "functional-voice recording" : "functional-voice"}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>
             <button className={draft.trim() || attachments.length ? "functional-send ready" : "functional-send"} aria-label={isStreaming ? "Stop generating" : "Send"} type="submit">{isStreaming ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}</button>
           </div>
         </form>
