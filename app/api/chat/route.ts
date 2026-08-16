@@ -51,9 +51,12 @@ export async function POST(request: Request) {
   try {
     const client = new OpenAI({ apiKey });
     const model = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
-    const input = [
-      ...history.map((message) => ({ role: message.role === "system" ? "developer" : message.role, content: message.content })),
-      { role: "user" as const, content },
+    const input: OpenAI.Responses.ResponseInput = [
+      ...history.map((message): OpenAI.Responses.ResponseInputItem => ({
+        role: message.role === "system" ? "developer" : message.role,
+        content: message.content,
+      })),
+      { role: "user", content },
     ];
     const stream = await client.responses.create({ model, input, stream: true });
 
