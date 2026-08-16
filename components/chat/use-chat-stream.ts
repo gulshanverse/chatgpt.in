@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { consumeUploadedChatFiles } from "../../lib/chat/upload-store";
 
 type StreamState = "idle" | "streaming" | "error";
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -35,10 +36,12 @@ export function useChatStream() {
     setError(null);
 
     try {
+      const queuedAttachments = await consumeUploadedChatFiles();
+      const allAttachments = [...(attachments ?? []), ...queuedAttachments];
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, content, history, model, attachments }),
+        body: JSON.stringify({ conversationId, content, history, model, attachments: allAttachments }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
