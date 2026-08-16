@@ -4,7 +4,7 @@ A high-fidelity, independent ChatGPT-inspired web application built for a hackat
 
 ## Current status
 
-The primary functional shell is implemented on `feat/primary-shell-integration`.
+The production implementation is on `main` and the GitHub Actions production build is green.
 
 ### Product
 
@@ -28,17 +28,20 @@ The primary functional shell is implemented on `feat/primary-shell-integration`.
 - Request size/count validation on the chat endpoint
 - Upload size validation
 - API error handling and recoverable UI states
-- `/api/health` endpoint
+- Production `/api/health` endpoint with build metadata and no-store caching
 - Browser security response headers
 - Production Next.js build verified by GitHub Actions
 
-## Final roadmap
+## Release gate
 
-1. Final mobile interaction polish
-2. Pixel-level visual refinement against the supplied reference screenshots
-3. Rendered-browser visual QA at reference viewport sizes
-4. Production environment and API failure verification
-5. Final CI and pull-request review
-6. Merge and deployment
+1. Functional implementation — complete
+2. Reliability and API hardening — complete
+3. Mobile and responsive implementation — complete
+4. Desktop/mobile fidelity layer — complete at code level
+5. Production CI/build verification — green
+6. Rendered-browser visual QA at the reference viewport sizes — requires a browser-rendering environment
+7. Production smoke test against deployed API credentials/environment — requires the deployment environment
+
+The repository is intentionally not claiming pixel-perfect rendered QA or live-provider smoke testing without those external environments.
 
 This is an independent implementation for a hackathon and is not affiliated with or endorsed by OpenAI.
