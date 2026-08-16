@@ -38,13 +38,23 @@ export function cancelChatFileUpload(clientId: string) {
   uploaded = uploaded.filter((file) => file.clientId !== clientId);
 }
 
-export async function consumeUploadedChatFiles(clientIds?: string[]) {
+export async function getUploadedChatFiles(clientIds?: string[]) {
   await pending.catch(() => undefined);
-  const allowed = clientIds ? new Set(clientIds) : null;
-  const result = uploaded.filter((file) => !allowed || allowed.has(file.clientId));
-  uploaded = allowed ? uploaded.filter((file) => !allowed.has(file.clientId)) : [];
-  for (const file of result) cancelled.delete(file.clientId);
-  if (!allowed) cancelled.clear();
+  if (!clientIds) return [...uploaded];
+  const allowed = new Set(clientIds);
+  return uploaded.filter((file) => allowed.has(file.clientId));
+}
+
+export async function consumeUploadedChatFiles(clientIds?: string[]) {
+  const result = await getUploadedChatFiles(clientIds);
+  if (clientIds) {
+    const allowed = new Set(clientIds);
+    uploaded = uploaded.filter((file) => !allowed.has(file.clientId));
+    for (const file of result) cancelled.delete(file.clientId);
+  } else {
+    uploaded = [];
+    cancelled.clear();
+  }
   pending = Promise.resolve();
   return result;
 }
