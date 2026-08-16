@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ChatMessage, Conversation } from "../../lib/chat/types";
 
 const STORAGE_KEY = "chatgpt.in.conversations.v1";
@@ -19,6 +11,8 @@ type ChatContextValue = {
   addMessage: (conversationId: string, message: Omit<ChatMessage, "id" | "createdAt">) => void;
   deleteConversation: (conversationId: string) => void;
   renameConversation: (conversationId: string, title: string) => void;
+  replaceMessages: (conversationId: string, messages: ChatMessage[]) => void;
+  searchConversations: (query: string) => Conversation[];
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -44,16 +38,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
   }, [conversations, hydrated]);
 
   const addMessage = useCallback((conversationId: string, message: Omit<ChatMessage, "id" | "createdAt">) => {
-    setConversations((current) => current.map((conversation) =>
-      conversation.id === conversationId
-        ? { ...conversation, updatedAt: new Date().toISOString(), messages: [...conversation.messages, { ...message, id: crypto.randomUUID(), createdAt: new Date().toISOString() }] }
-        : conversation,
-    ));
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? { ...conversation, updatedAt: new Date().toISOString(), messages: [...conversation.messages, { ...message, id: crypto.randomUUID(), createdAt: new Date().toISOString() }] }
+      : conversation));
   }, []);
 
   const createConversationMemo = useCallback((title?: string) => {
@@ -67,18 +58,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const renameConversation = useCallback((conversationId: string, title: string) => {
-    setConversations((current) => current.map((conversation) =>
-      conversation.id === conversationId
-        ? { ...conversation, title: title.trim() || conversation.title, updatedAt: new Date().toISOString() }
-        : conversation,
-    ));
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? { ...conversation, title: title.trim() || conversation.title, updatedAt: new Date().toISOString() }
+      : conversation));
   }, []);
 
-  const value = useMemo(
-    () => ({ conversations, createConversation: createConversationMemo, addMessage, deleteConversation, renameConversation }),
-    [conversations, createConversationMemo, addMessage, deleteConversation, renameConversation],
-  );
+  const replaceMessages = useCallback((conversationId: string, messages: ChatMessage[]) => {
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId
+      ? { ...conversation, messages, updatedAt: new Date().toISOString() }
+      : conversation));
+  }, []);
 
+  const searchConversations = useCallback((query: string) => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return conversations;
+    return conversations.filter((conversation) => conversation.title.toLowerCase().includes(normalized)
+      || conversation.messages.some((message) => message.content.toLowerCase().includes(normalized)));
+  }, [conversations]);
+
+  const value = useMemo(() => ({ conversations, createConversation: createConversationMemo, addMessage, deleteConversation, renameConversation, replaceMessages, searchConversations }), [conversations, createConversationMemo, addMessage, deleteConversation, renameConversation, replaceMessages, searchConversations]);
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
