@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./responsive.css";
 import "./fidelity.css";
-import { ChatProvider } from "@/components/chat/chat-provider";
+import { ChatProvider } from "../components/chat/chat-provider";
 
 export const metadata: Metadata = {
   title: "ChatGPT Go — AI Chat",
