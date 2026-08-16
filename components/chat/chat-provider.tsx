@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { ChatMessage, Conversation } from "@/lib/chat/types";
+import type { ChatMessage, Conversation } from "../../lib/chat/types";
 
 const STORAGE_KEY = "chatgpt.in.conversations.v1";
 
@@ -47,9 +47,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (conversations.length) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
   }, [conversations]);
 
   const addMessage = useCallback(
