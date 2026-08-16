@@ -1,0 +1,1 @@
+Next: primary-shell integration, voice, real file uploads, visual browser QA, production deployment.
