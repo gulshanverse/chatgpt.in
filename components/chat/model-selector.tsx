@@ -8,7 +8,7 @@ export type ChatModel = { id: string; label: string; description: string };
 
 export const CHAT_MODELS: ChatModel[] = [
   { id: "gpt-5.6", label: "GPT-5.6", description: "Best for everyday work" },
-  { id: "gpt-5.6-mini", label: "GPT-5.6 mini", description: "Fast and efficient" },
+  { id: "gpt-5.4-mini", label: "GPT-5.4 mini", description: "Fast and efficient" },
 ];
 
 export function ModelSelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
