@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const initialSelectionDone = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const mediaStream = useRef<MediaStream | null>(null);
@@ -36,6 +37,12 @@ export default function ChatPage() {
 
   useEffect(() => { try { const saved = window.localStorage.getItem(MODEL_KEY); if (saved) setModel(saved); } catch {} }, []);
   useEffect(() => { try { window.localStorage.setItem(MODEL_KEY, model); } catch {} }, [model]);
+  useEffect(() => {
+    if (initialSelectionDone.current || conversations.length === 0) return;
+    const mostRecent = [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    if (mostRecent) setActiveId(mostRecent.id);
+    initialSelectionDone.current = true;
+  }, [conversations]);
   useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); } if (event.key === "Escape") { setSearchOpen(false); setSettingsOpen(false); setMenuId(null); if (window.innerWidth <= 760) setSidebar(false); } }; window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener); }, []);
 
   function addFiles(files: FileList | null) {
