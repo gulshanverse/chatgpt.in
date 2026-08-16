@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 type StreamState = "idle" | "streaming" | "error";
 
@@ -14,8 +14,18 @@ type StreamOptions = {
 export function useChatStream() {
   const [state, setState] = useState<StreamState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  const stop = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setState("idle");
+  }, []);
 
   const send = useCallback(async ({ conversationId, content, onConversation, onToken }: StreamOptions) => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setState("streaming");
     setError(null);
 
@@ -24,6 +34,7 @@ export function useChatStream() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId, content }),
+        signal: controller.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -54,14 +65,17 @@ export function useChatStream() {
         if (done) break;
       }
 
-      setState("idle");
+      if (!controller.signal.aborted) setState("idle");
     } catch (streamError) {
+      if (controller.signal.aborted) return;
       const message = streamError instanceof Error ? streamError.message : "Chat stream failed";
       setError(message);
       setState("error");
       throw streamError;
+    } finally {
+      if (controllerRef.current === controller) controllerRef.current = null;
     }
   }, []);
 
-  return { send, state, error, isStreaming: state === "streaming" };
+  return { send, stop, state, error, isStreaming: state === "streaming" };
 }
