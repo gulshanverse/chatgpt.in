@@ -6,6 +6,10 @@ export const runtime = "nodejs";
 const encoder = new TextEncoder();
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
 type AttachmentInput = { fileId?: string; name?: string };
+const MAX_CONTENT_LENGTH = 32_000;
+const MAX_HISTORY_ITEMS = 30;
+const MAX_HISTORY_MESSAGE_LENGTH = 32_000;
+const MAX_ATTACHMENTS = 10;
 
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -35,10 +39,14 @@ export async function POST(request: Request) {
 
   const content = body.content?.trim();
   if (!content) return NextResponse.json({ error: "Message content is required" }, { status: 400 });
+  if (content.length > MAX_CONTENT_LENGTH) return NextResponse.json({ error: "Message is too long. Please keep it under 32,000 characters." }, { status: 413 });
 
   const conversationId = body.conversationId ?? crypto.randomUUID();
-  const history = (body.history ?? []).filter((message) => message.content.trim()).slice(-30);
-  const attachments = (body.attachments ?? []).filter((attachment) => attachment.fileId);
+  const history = (body.history ?? [])
+    .filter((message) => message && typeof message.content === "string" && message.content.trim())
+    .slice(-MAX_HISTORY_ITEMS)
+    .map((message) => ({ ...message, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
+  const attachments = (body.attachments ?? []).filter((attachment) => attachment?.fileId).slice(0, MAX_ATTACHMENTS);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
