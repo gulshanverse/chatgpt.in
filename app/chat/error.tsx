@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => { console.error("Chat route error", error); }, [error]);
 
   return (
