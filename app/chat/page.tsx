@@ -43,6 +43,16 @@ export default function ChatPage() {
     if (mostRecent) setActiveId(mostRecent.id);
     initialSelectionDone.current = true;
   }, [conversations]);
+  useEffect(() => {
+    return () => {
+      recorder.current?.stop();
+      mediaStream.current?.getTracks().forEach((track) => track.stop());
+      mediaStream.current = null;
+      recorder.current = null;
+      audioChunks.current = [];
+      stop();
+    };
+  }, [stop]);
   useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); } if (event.key === "Escape") { setSearchOpen(false); setSettingsOpen(false); setMenuId(null); if (window.innerWidth <= 760) setSidebar(false); } }; window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener); }, []);
 
   function addFiles(files: FileList | null) {
