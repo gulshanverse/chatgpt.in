@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AttachmentUploadBridge } from "./attachment-upload-bridge";
 import type { ChatMessage, Conversation } from "../../lib/chat/types";
 
 const STORAGE_KEY = "chatgpt.in.conversations.v1";
@@ -77,7 +78,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [conversations]);
 
   const value = useMemo(() => ({ conversations, createConversation: createConversationMemo, addMessage, deleteConversation, renameConversation, replaceMessages, searchConversations }), [conversations, createConversationMemo, addMessage, deleteConversation, renameConversation, replaceMessages, searchConversations]);
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return <ChatContext.Provider value={value}><AttachmentUploadBridge />{children}</ChatContext.Provider>;
 }
 
 export function useChat() {
