@@ -4,8 +4,15 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const encoder = new TextEncoder();
-
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
+type AttachmentInput = { fileId?: string; name?: string };
+const MAX_CONTENT_LENGTH = 32_000;
+const MAX_HISTORY_ITEMS = 30;
+const MAX_HISTORY_MESSAGE_LENGTH = 32_000;
+const MAX_ATTACHMENTS = 10;
+const MAX_CONVERSATION_ID_LENGTH = 100;
+const ALLOWED_MODELS = new Set(["gpt-5.6", "gpt-5.4", "gpt-5.4-mini"]);
+const FILE_ID_PATTERN = /^file-[A-Za-z0-9_-]{1,200}$/;
 
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -26,8 +33,7 @@ function streamResponse(conversationId: string, responseText: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { conversationId?: string; content?: string; history?: HistoryMessage[]; model?: string };
-
+  let body: { conversationId?: string; content?: string; history?: HistoryMessage[]; model?: string; attachments?: AttachmentInput[] };
   try {
     body = await request.json();
   } catch {
@@ -36,27 +42,53 @@ export async function POST(request: Request) {
 
   const content = body.content?.trim();
   if (!content) return NextResponse.json({ error: "Message content is required" }, { status: 400 });
+  if (content.length > MAX_CONTENT_LENGTH) return NextResponse.json({ error: "Message is too long. Please keep it under 32,000 characters." }, { status: 413 });
 
-  const conversationId = body.conversationId ?? crypto.randomUUID();
-  const history = (body.history ?? []).filter((message) => message.content.trim()).slice(-30);
+  const rawConversationId = body.conversationId?.trim();
+  if (rawConversationId && rawConversationId.length > MAX_CONVERSATION_ID_LENGTH) {
+    return NextResponse.json({ error: "Conversation identifier is invalid" }, { status: 400 });
+  }
+  const conversationId = rawConversationId || crypto.randomUUID();
+
+  const history = (Array.isArray(body.history) ? body.history : [])
+    .filter((message): message is HistoryMessage => Boolean(message)
+      && (message.role === "user" || message.role === "assistant" || message.role === "system")
+      && typeof message.content === "string"
+      && Boolean(message.content.trim()))
+    .slice(-MAX_HISTORY_ITEMS)
+    .map((message) => ({ role: message.role, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
+
+  const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const invalidAttachment = rawAttachments.some((attachment) => !attachment || typeof attachment.fileId !== "string" || !FILE_ID_PATTERN.test(attachment.fileId));
+  if (invalidAttachment) return NextResponse.json({ error: "One or more attachments are invalid" }, { status: 400 });
+  const attachments = rawAttachments.slice(0, MAX_ATTACHMENTS);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
+    const suffix = attachments.length ? ` I also received ${attachments.length} uploaded file${attachments.length === 1 ? "" : "s"}.` : "";
     return new Response(
-      streamResponse(conversationId, `I received your message: “${content}”. Add OPENAI_API_KEY to enable live model responses.`),
+      streamResponse(conversationId, `I received your message: “${content}”.${suffix} Add OPENAI_API_KEY to enable live model responses.`),
       { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } },
     );
   }
 
+  const requestedModel = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
+  const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : "gpt-5.6";
+
   try {
     const client = new OpenAI({ apiKey });
-    const model = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
     const input: OpenAI.Responses.ResponseInput = [
       ...history.map((message): OpenAI.Responses.ResponseInputItem => ({
         role: message.role === "system" ? "developer" : message.role,
         content: message.content,
       })),
-      { role: "user", content },
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: content },
+          ...attachments.map((attachment) => ({ type: "input_file" as const, file_id: attachment.fileId! })),
+        ],
+      },
     ];
     const stream = await client.responses.create({ model, input, stream: true });
 
@@ -69,15 +101,15 @@ export async function POST(request: Request) {
             if (event.type === "response.completed") controller.enqueue(sse("done", { conversationId }));
           }
           controller.close();
-        } catch (error) {
-          controller.enqueue(sse("error", { error: error instanceof Error ? error.message : "Model stream failed" }));
+        } catch {
+          controller.enqueue(sse("error", { error: "The model response was interrupted. Please try again." }));
           controller.close();
         }
       },
     });
 
     return new Response(responseStream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start model response" }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: "Unable to start the model response right now" }, { status: 502 });
   }
 }
