@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Sparkles } from "lucide-react";
+import styles from "./model-selector.module.css";
 
 export type ChatModel = { id: string; label: string; description: string };
 
@@ -23,13 +24,13 @@ export function ModelSelector({ value, onChange }: { value: string; onChange: (v
   }, [open]);
 
   return (
-    <div className="model-selector" ref={ref}>
-      <button type="button" className="model-selector-trigger" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+    <div className={styles.root} ref={ref}>
+      <button type="button" className={styles.trigger} onClick={() => setOpen((current) => !current)} aria-expanded={open}>
         <Sparkles size={15} /> <span>{selected.label}</span> <ChevronDown size={14} />
       </button>
-      {open && <div className="model-selector-menu">
-        <div className="model-selector-title">Choose a model</div>
-        {CHAT_MODELS.map((model) => <button type="button" key={model.id} className="model-option" onClick={() => { onChange(model.id); setOpen(false); }}>
+      {open && <div className={styles.menu}>
+        <div className={styles.title}>Choose a model</div>
+        {CHAT_MODELS.map((model) => <button type="button" key={model.id} className={styles.option} onClick={() => { onChange(model.id); setOpen(false); }}>
           <span><strong>{model.label}</strong><small>{model.description}</small></span>
           {model.id === selected.id && <Check size={16} />}
         </button>)}
