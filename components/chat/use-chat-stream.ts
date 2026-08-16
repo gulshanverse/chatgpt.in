@@ -4,12 +4,14 @@ import { useCallback, useRef, useState } from "react";
 
 type StreamState = "idle" | "streaming" | "error";
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
+type ChatAttachmentInput = { id: string; name: string; type: string; size: number };
 
 type StreamOptions = {
   conversationId?: string;
   content: string;
   history?: HistoryMessage[];
   model?: string;
+  attachments?: ChatAttachmentInput[];
   onConversation?: (conversationId: string) => void;
   onToken?: (token: string) => void;
 };
@@ -25,7 +27,7 @@ export function useChatStream() {
     setState("idle");
   }, []);
 
-  const send = useCallback(async ({ conversationId, content, history, model, onConversation, onToken }: StreamOptions) => {
+  const send = useCallback(async ({ conversationId, content, history, model, attachments, onConversation, onToken }: StreamOptions) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -36,7 +38,7 @@ export function useChatStream() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, content, history, model }),
+        body: JSON.stringify({ conversationId, content, history, model, attachments }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
