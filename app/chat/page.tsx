@@ -9,7 +9,7 @@ import { StreamedMessage } from "../../components/chat/streamed-message";
 
 export default function ChatPage() {
   const { conversations, createConversation, addMessage } = useChat();
-  const { send, isStreaming, error } = useChatStream();
+  const { send, stop, isStreaming, error } = useChatStream();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sidebar, setSidebar] = useState(true);
@@ -19,8 +19,9 @@ export default function ChatPage() {
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
+    if (isStreaming) { stop(); return; }
     const text = draft.trim();
-    if (!text || isStreaming) return;
+    if (!text) return;
     const conversation = active ?? createConversation(text.slice(0, 48));
     setActiveId(conversation.id);
     addMessage(conversation.id, { role: "user", content: text });
@@ -40,13 +41,13 @@ export default function ChatPage() {
     <main className="functional-chat">
       {sidebar && <aside className="functional-sidebar">
         <div className="functional-sidebar-top">
-          <button className="functional-brand" onClick={() => { setActiveId(null); setAssistantText(""); }}><Sparkles size={19} /> ChatGPT <span>Go</span></button>
+          <button className="functional-brand" onClick={() => { stop(); setActiveId(null); setAssistantText(""); }}><Sparkles size={19} /> ChatGPT <span>Go</span></button>
           <button className="functional-icon" onClick={() => setSidebar(false)} aria-label="Close sidebar"><Menu size={19} /></button>
         </div>
-        <button className="functional-new" onClick={() => { const chat = createConversation(); setActiveId(chat.id); setAssistantText(""); }}><Plus size={18} /> New chat</button>
+        <button className="functional-new" onClick={() => { stop(); const chat = createConversation(); setActiveId(chat.id); setAssistantText(""); }}><Plus size={18} /> New chat</button>
         <div className="functional-history">
           <div className="functional-label">Chats</div>
-          {conversations.map((conversation) => <button key={conversation.id} className={conversation.id === activeId ? "functional-chat-item active" : "functional-chat-item"} onClick={() => { setActiveId(conversation.id); setAssistantText(""); }}>{conversation.title}</button>)}
+          {conversations.map((conversation) => <button key={conversation.id} className={conversation.id === activeId ? "functional-chat-item active" : "functional-chat-item"} onClick={() => { stop(); setActiveId(conversation.id); setAssistantText(""); }}>{conversation.title}</button>)}
         </div>
         <button className="functional-account"><UserCircle size={19} /><span>parthkrishna</span><small>Go</small></button>
       </aside>}
@@ -62,7 +63,7 @@ export default function ChatPage() {
         <form className="functional-composer" onSubmit={submit}>
           <button type="button" aria-label="Add"><Plus size={20} /></button>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything" autoFocus disabled={isStreaming} />
-          <button className={draft.trim() && !isStreaming ? "functional-send ready" : "functional-send"} aria-label={isStreaming ? "Generating" : "Send"} type="submit">{isStreaming ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}</button>
+          <button className={draft.trim() && !isStreaming ? "functional-send ready" : "functional-send"} aria-label={isStreaming ? "Stop generating" : "Send"} type="submit">{isStreaming ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}</button>
         </form>
       </section>
     </main>
