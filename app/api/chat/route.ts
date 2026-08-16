@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const encoder = new TextEncoder();
 type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -75,23 +76,23 @@ export async function POST(request: Request) {
   const requestedModel = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
   const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : "gpt-5.6";
 
-  try {
-    const client = new OpenAI({ apiKey });
-    const input: OpenAI.Responses.ResponseInput = [
-      ...history.map((message): OpenAI.Responses.ResponseInputItem => ({
-        role: message.role === "system" ? "developer" : message.role,
-        content: message.content,
-      })),
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: content },
-          ...attachments.map((attachment) => ({ type: "input_file" as const, file_id: attachment.fileId! })),
-        ],
-      },
-    ];
-    const stream = await client.responses.create({ model, input, stream: true });
+  const client = new OpenAI({ apiKey });
+  const input: OpenAI.Responses.ResponseInput = [
+    ...history.map((message): OpenAI.Responses.ResponseInputItem => ({
+      role: message.role === "system" ? "developer" : message.role,
+      content: message.content,
+    })),
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: content },
+        ...attachments.map((attachment) => ({ type: "input_file" as const, file_id: attachment.fileId! })),
+      ],
+    },
+  ];
 
+  try {
+    const stream = await client.responses.create({ model, input, stream: true });
     const responseStream = new ReadableStream<Uint8Array>({
       async start(controller) {
         controller.enqueue(sse("conversation", { conversationId }));
@@ -99,17 +100,33 @@ export async function POST(request: Request) {
           for await (const event of stream) {
             if (event.type === "response.output_text.delta") controller.enqueue(sse("token", { token: event.delta }));
             if (event.type === "response.completed") controller.enqueue(sse("done", { conversationId }));
+            if (event.type === "response.failed") throw new Error("OpenAI response failed");
           }
           controller.close();
         } catch {
-          controller.enqueue(sse("error", { error: "The model response was interrupted. Please try again." }));
-          controller.close();
+          // Fall back to a non-streaming Responses request. This protects the Vercel
+          // deployment from transient upstream stream disconnects while preserving
+          // the same SSE contract expected by the client.
+          try {
+            const fallback = await client.responses.create({ model, input, stream: false });
+            const fallbackText = fallback.output_text?.trim();
+            if (!fallbackText) throw new Error("Empty model response");
+            for (const token of fallbackText.split(" ")) {
+              controller.enqueue(sse("token", { token: `${token} ` }));
+              await new Promise((resolve) => setTimeout(resolve, 8));
+            }
+            controller.enqueue(sse("done", { conversationId }));
+            controller.close();
+          } catch {
+            controller.enqueue(sse("error", { error: "The model could not complete this response. Check the OpenAI project key, billing, and model access, then try again." }));
+            controller.close();
+          }
         }
       },
     });
 
-    return new Response(responseStream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
+    return new Response(responseStream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
   } catch {
-    return NextResponse.json({ error: "Unable to start the model response right now" }, { status: 502 });
+    return NextResponse.json({ error: "Unable to start the model response right now. Check the OpenAI project key, billing, and model access." }, { status: 502 });
   }
 }
