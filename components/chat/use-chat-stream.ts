@@ -3,10 +3,13 @@
 import { useCallback, useRef, useState } from "react";
 
 type StreamState = "idle" | "streaming" | "error";
+type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
 
 type StreamOptions = {
   conversationId?: string;
   content: string;
+  history?: HistoryMessage[];
+  model?: string;
   onConversation?: (conversationId: string) => void;
   onToken?: (token: string) => void;
 };
@@ -22,7 +25,7 @@ export function useChatStream() {
     setState("idle");
   }, []);
 
-  const send = useCallback(async ({ conversationId, content, onConversation, onToken }: StreamOptions) => {
+  const send = useCallback(async ({ conversationId, content, history, model, onConversation, onToken }: StreamOptions) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -33,10 +36,9 @@ export function useChatStream() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, content }),
+        body: JSON.stringify({ conversationId, content, history, model }),
         signal: controller.signal,
       });
-
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to start the chat stream");
@@ -45,13 +47,11 @@ export function useChatStream() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
         const events = buffer.split("\n\n");
         buffer = events.pop() ?? "";
-
         for (const event of events) {
           const eventName = event.split("\n").find((line) => line.startsWith("event: "))?.slice(7).trim();
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
@@ -61,10 +61,8 @@ export function useChatStream() {
           if (data.token) onToken?.(data.token);
           if (eventName === "error" || data.error) throw new Error(data.error ?? "Chat stream failed");
         }
-
         if (done) break;
       }
-
       if (!controller.signal.aborted) setState("idle");
     } catch (streamError) {
       if (controller.signal.aborted) return;
