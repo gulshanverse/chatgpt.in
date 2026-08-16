@@ -59,10 +59,14 @@ export function useChatStream() {
     setError(null);
 
     try {
-      const selectedIds = (attachments ?? []).map((attachment) => attachment.id);
+      const selected = attachments ?? [];
+      const selectedIds = selected.map((attachment) => attachment.id);
       const queuedAttachments = await consumeUploadedChatFiles(selectedIds);
       const uploadedByClientId = new Map(queuedAttachments.map((attachment) => [attachment.clientId, attachment]));
-      const allAttachments = (attachments ?? []).flatMap((attachment) => {
+      if (selectedIds.length !== uploadedByClientId.size) {
+        throw new Error("One or more attachments failed to upload. Please retry the upload.");
+      }
+      const allAttachments = selected.flatMap((attachment) => {
         const uploaded = uploadedByClientId.get(attachment.id);
         return uploaded ? [{ id: uploaded.id, name: uploaded.name, type: uploaded.type, size: uploaded.size }] : [];
       });
