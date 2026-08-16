@@ -10,7 +10,9 @@ const MAX_CONTENT_LENGTH = 32_000;
 const MAX_HISTORY_ITEMS = 30;
 const MAX_HISTORY_MESSAGE_LENGTH = 32_000;
 const MAX_ATTACHMENTS = 10;
+const MAX_CONVERSATION_ID_LENGTH = 100;
 const ALLOWED_MODELS = new Set(["gpt-5.6", "gpt-5.4", "gpt-5.4-mini"]);
+const FILE_ID_PATTERN = /^file-[A-Za-z0-9_-]{1,200}$/;
 
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -42,12 +44,24 @@ export async function POST(request: Request) {
   if (!content) return NextResponse.json({ error: "Message content is required" }, { status: 400 });
   if (content.length > MAX_CONTENT_LENGTH) return NextResponse.json({ error: "Message is too long. Please keep it under 32,000 characters." }, { status: 413 });
 
-  const conversationId = body.conversationId ?? crypto.randomUUID();
-  const history = (body.history ?? [])
-    .filter((message) => message && typeof message.content === "string" && Boolean(message.content.trim()))
+  const rawConversationId = body.conversationId?.trim();
+  if (rawConversationId && rawConversationId.length > MAX_CONVERSATION_ID_LENGTH) {
+    return NextResponse.json({ error: "Conversation identifier is invalid" }, { status: 400 });
+  }
+  const conversationId = rawConversationId || crypto.randomUUID();
+
+  const history = (Array.isArray(body.history) ? body.history : [])
+    .filter((message): message is HistoryMessage => Boolean(message)
+      && (message.role === "user" || message.role === "assistant" || message.role === "system")
+      && typeof message.content === "string"
+      && Boolean(message.content.trim()))
     .slice(-MAX_HISTORY_ITEMS)
-    .map((message) => ({ ...message, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
-  const attachments = (body.attachments ?? []).filter((attachment) => attachment?.fileId).slice(0, MAX_ATTACHMENTS);
+    .map((message) => ({ role: message.role, content: message.content.trim().slice(0, MAX_HISTORY_MESSAGE_LENGTH) }));
+
+  const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const invalidAttachment = rawAttachments.some((attachment) => !attachment || typeof attachment.fileId !== "string" || !FILE_ID_PATTERN.test(attachment.fileId));
+  if (invalidAttachment) return NextResponse.json({ error: "One or more attachments are invalid" }, { status: 400 });
+  const attachments = rawAttachments.slice(0, MAX_ATTACHMENTS);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
