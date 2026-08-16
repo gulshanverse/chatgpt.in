@@ -1,19 +1,22 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ArrowUp, Menu, Plus, Sparkles, UserCircle, Square } from "lucide-react";
+import { ArrowUp, Menu, MoreHorizontal, Plus, Search, Sparkles, UserCircle, Square, Trash2, Pencil } from "lucide-react";
 import { useChat } from "../../components/chat/chat-provider";
+import { ChatSearch } from "../../components/chat/chat-search";
 import { MessageContent } from "../../components/chat/message-content";
 import { useChatStream } from "../../components/chat/use-chat-stream";
 import { StreamedMessage } from "../../components/chat/streamed-message";
 
 export default function ChatPage() {
-  const { conversations, createConversation, addMessage } = useChat();
+  const { conversations, createConversation, addMessage, deleteConversation, renameConversation } = useChat();
   const { send, stop, isStreaming, error } = useChatStream();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sidebar, setSidebar] = useState(true);
   const [assistantText, setAssistantText] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [menuId, setMenuId] = useState<string | null>(null);
 
   const active = useMemo(() => conversations.find((item) => item.id === activeId), [conversations, activeId]);
 
@@ -32,22 +35,41 @@ export default function ChatPage() {
       await send({ conversationId: conversation.id, content: text, onToken: (token) => { full += token; setAssistantText(full); } });
       if (full) addMessage(conversation.id, { role: "assistant", content: full });
       setAssistantText("");
-    } catch {
-      // Error is rendered below by the stream hook.
-    }
+    } catch { /* stream hook exposes the error */ }
+  }
+
+  function selectChat(id: string) { stop(); setActiveId(id); setAssistantText(""); setMenuId(null); }
+  function removeChat(id: string) { stop(); deleteConversation(id); if (activeId === id) { setActiveId(null); setAssistantText(""); } setMenuId(null); }
+  function renameChat(id: string) {
+    const current = conversations.find((item) => item.id === id);
+    if (!current) return;
+    const title = window.prompt("Rename chat", current.title);
+    if (title?.trim()) renameConversation(id, title);
+    setMenuId(null);
   }
 
   return (
     <main className="functional-chat">
+      <ChatSearch open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={selectChat} />
       {sidebar && <aside className="functional-sidebar">
         <div className="functional-sidebar-top">
           <button className="functional-brand" onClick={() => { stop(); setActiveId(null); setAssistantText(""); }}><Sparkles size={19} /> ChatGPT <span>Go</span></button>
           <button className="functional-icon" onClick={() => setSidebar(false)} aria-label="Close sidebar"><Menu size={19} /></button>
         </div>
-        <button className="functional-new" onClick={() => { stop(); const chat = createConversation(); setActiveId(chat.id); setAssistantText(""); }}><Plus size={18} /> New chat</button>
+        <button className="functional-new" onClick={() => { const chat = createConversation(); selectChat(chat.id); }}><Plus size={18} /> New chat</button>
+        <button className="functional-search" onClick={() => setSearchOpen(true)}><Search size={17} /> Search chats <kbd>Ctrl K</kbd></button>
         <div className="functional-history">
           <div className="functional-label">Chats</div>
-          {conversations.map((conversation) => <button key={conversation.id} className={conversation.id === activeId ? "functional-chat-item active" : "functional-chat-item"} onClick={() => { stop(); setActiveId(conversation.id); setAssistantText(""); }}>{conversation.title}</button>)}
+          {conversations.map((conversation) => (
+            <div className="functional-chat-row" key={conversation.id}>
+              <button className={conversation.id === activeId ? "functional-chat-item active" : "functional-chat-item"} onClick={() => selectChat(conversation.id)}>{conversation.title}</button>
+              <button className="functional-chat-menu-trigger" aria-label={`Actions for ${conversation.title}`} onClick={() => setMenuId(menuId === conversation.id ? null : conversation.id)}><MoreHorizontal size={17} /></button>
+              {menuId === conversation.id && <div className="functional-chat-menu">
+                <button onClick={() => renameChat(conversation.id)}><Pencil size={15} /> Rename</button>
+                <button className="danger" onClick={() => removeChat(conversation.id)}><Trash2 size={15} /> Delete</button>
+              </div>}
+            </div>
+          ))}
         </div>
         <button className="functional-account"><UserCircle size={19} /><span>parthkrishna</span><small>Go</small></button>
       </aside>}
