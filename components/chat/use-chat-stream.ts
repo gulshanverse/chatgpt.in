@@ -59,8 +59,13 @@ export function useChatStream() {
     setError(null);
 
     try {
-      const queuedAttachments = await consumeUploadedChatFiles();
-      const allAttachments = [...(attachments ?? []), ...queuedAttachments];
+      const selectedIds = (attachments ?? []).map((attachment) => attachment.id);
+      const queuedAttachments = await consumeUploadedChatFiles(selectedIds);
+      const uploadedByClientId = new Map(queuedAttachments.map((attachment) => [attachment.clientId, attachment]));
+      const allAttachments = (attachments ?? []).flatMap((attachment) => {
+        const uploaded = uploadedByClientId.get(attachment.id);
+        return uploaded ? [{ id: uploaded.id, name: uploaded.name, type: uploaded.type, size: uploaded.size }] : [];
+      });
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
