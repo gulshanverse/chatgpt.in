@@ -5,12 +5,13 @@ export const runtime = "nodejs";
 
 const encoder = new TextEncoder();
 
+type HistoryMessage = { role: "user" | "assistant" | "system"; content: string };
+
 function sse(event: string, data: unknown) {
   return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function developmentStream(conversationId: string, content: string) {
-  const responseText = `I received your message: “${content}”. Add OPENAI_API_KEY to enable live model responses.`;
+function streamResponse(conversationId: string, responseText: string) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       controller.enqueue(sse("conversation", { conversationId }));
@@ -25,7 +26,7 @@ function developmentStream(conversationId: string, content: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { conversationId?: string; content?: string };
+  let body: { conversationId?: string; content?: string; history?: HistoryMessage[]; model?: string };
 
   try {
     body = await request.json();
@@ -34,43 +35,35 @@ export async function POST(request: Request) {
   }
 
   const content = body.content?.trim();
-  if (!content) {
-    return NextResponse.json({ error: "Message content is required" }, { status: 400 });
-  }
+  if (!content) return NextResponse.json({ error: "Message content is required" }, { status: 400 });
 
   const conversationId = body.conversationId ?? crypto.randomUUID();
+  const history = (body.history ?? []).filter((message) => message.content.trim()).slice(-30);
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    return new Response(developmentStream(conversationId, content), {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
+    return new Response(
+      streamResponse(conversationId, `I received your message: “${content}”. Add OPENAI_API_KEY to enable live model responses.`),
+      { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } },
+    );
   }
 
   try {
     const client = new OpenAI({ apiKey });
-    const model = process.env.OPENAI_MODEL ?? "gpt-5.6";
-    const stream = await client.responses.create({
-      model,
-      input: content,
-      stream: true,
-    });
+    const model = body.model || process.env.OPENAI_MODEL || "gpt-5.6";
+    const input = [
+      ...history.map((message) => ({ role: message.role === "system" ? "developer" : message.role, content: message.content })),
+      { role: "user" as const, content },
+    ];
+    const stream = await client.responses.create({ model, input, stream: true });
 
     const responseStream = new ReadableStream<Uint8Array>({
       async start(controller) {
         controller.enqueue(sse("conversation", { conversationId }));
         try {
           for await (const event of stream) {
-            if (event.type === "response.output_text.delta") {
-              controller.enqueue(sse("token", { token: event.delta }));
-            }
-            if (event.type === "response.completed") {
-              controller.enqueue(sse("done", { conversationId }));
-            }
+            if (event.type === "response.output_text.delta") controller.enqueue(sse("token", { token: event.delta }));
+            if (event.type === "response.completed") controller.enqueue(sse("done", { conversationId }));
           }
           controller.close();
         } catch (error) {
@@ -80,17 +73,8 @@ export async function POST(request: Request) {
       },
     });
 
-    return new Response(responseStream, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
+    return new Response(responseStream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to start model response" },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start model response" }, { status: 502 });
   }
 }
